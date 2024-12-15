@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Time Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        #totalTime {
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f4f4f4;
+        }
+        #entryModal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+        }
+        .modal-content input {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 5px;
+        }
+        #entryLog {
+            margin-top: 20px;
+        }
+        .log-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .log-entry:hover {
+            background-color: #f1f1f1;
+        }
+        .entry-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="totalTime">Total Time: 0h 0m</div>
+    
+    <button id="addEntryBtn">Add Time Entry</button>
+    <button id="clearAllBtn">Clear All Entries</button>
+
+    <div id="entryModal">
+        <div class="modal-content">
+            <h2>Add Time Entry</h2>
+            <label>Entry Name:</label>
+            <input type="text" id="entryName" placeholder="Enter entry name (optional)">
+            <label>Start Time:</label>
+            <input type="datetime-local" id="startTime" required>
+            <label>End Time:</label>
+            <input type="datetime-local" id="endTime" required>
+            <button id="saveEntryBtn">Save</button>
+            <button id="cancelModalBtn">Cancel</button>
+        </div>
+    </div>
+
+    <div id="entryLog"></div>
+
+    <script>
+        (function() {
+            // Tracking the current edited entry ID to prevent unintended deletion
+            let currentEditingEntryId = null;
+
+            class TimeTracker {
+                constructor() {
+                    try {
+                        this.entries = JSON.parse(localStorage.getItem('timeEntries') || '[]');
+                    } catch (error) {
+                        console.error('Error accessing localStorage:', error);
+                        this.entries = [];
+                    }
+                    this.renderEntries();
+                    this.calculateTotalTime();
+                }
+
+                addEntry(name, start, end) {
+                    const entry = {
+                        id: Date.now(),
+                        name: name || 'Unnamed Entry',
+                        start: start,
+                        end: end,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    };
+                    this.entries.unshift(entry);
+                    this.saveEntries();
+                    this.renderEntries();
+                    this.calculateTotalTime();
+                }
+
+                saveEntries() {
+                    const oneMonthAgo = new Date();
+                    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+                    
+                    this.entries = this.entries.filter(entry => 
+                        new Date(entry.createdAt) > oneMonthAgo
+                    );
+
+                    try {
+                        localStorage.setItem('timeEntries', JSON.stringify(this.entries));
+                    } catch (error) {
+                        console.error('Error saving to localStorage:', error);
+                        alert('Unable to save entries. Storage may be restricted.');
+                    }
+                }
+
+                renderEntries() {
+                    const entryLog = document.getElementById('entryLog');
+                    entryLog.innerHTML = '';
+
+                    this.entries.forEach(entry => {
+                        const startDate = new Date(entry.start);
+                        const endDate = new Date(entry.end);
+                        const duration = this.calculateDuration(startDate, endDate);
+
+                        const entryDiv = document.createElement('div');
+                        entryDiv.className = 'log-entry';
+                        entryDiv.innerHTML = `
+                            <div>
+                                <strong>${entry.name || 'Unnamed Entry'}</strong>
+                                <div>${startDate.toLocaleString()} - ${endDate.toLocaleString()}</div>
+                                <div class="timestamp">
+                                    Created: ${new Date(entry.createdAt).toLocaleString()}
+                                    | Updated: ${new Date(entry.updatedAt).toLocaleString()}
+                                </div>
+                                <div>Duration: ${duration.hours}h ${duration.minutes}m</div>
+                            </div>
+                            <div class="entry-actions">
+                                <button onclick="timeTracker.prepareEditEntry(${entry.id})">Edit</button>
+                                <button onclick="timeTracker.deleteEntry(${entry.id})">Delete</button>
+                            </div>
+                        `;
+                        entryLog.appendChild(entryDiv);
+                    });
+                }
+
+                calculateDuration(start, end) {
+                    const diffMs = end - start;
+                    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    return { hours, minutes };
+                }
+
+                calculateTotalTime() {
+                    const totalTimeDiv = document.getElementById('totalTime');
+                    const totalDuration = this.entries.reduce((total, entry) => {
+                        const start = new Date(entry.start);
+                        const end = new Date(entry.end);
+                        const duration = this.calculateDuration(start, end);
+                        return {
+                            hours: total.hours + duration.hours,
+                            minutes: total.minutes + duration.minutes
+                        };
+                    }, { hours: 0, minutes: 0 });
+
+                    totalDuration.hours += Math.floor(totalDuration.minutes / 60);
+                    totalDuration.minutes %= 60;
+
+                    totalTimeDiv.textContent = `Total Time: ${totalDuration.hours}h ${totalDuration.minutes}m`;
+                }
+
+                deleteEntry(id) {
+                    this.entries = this.entries.filter(entry => entry.id !== id);
+                    this.saveEntries();
+                    this.renderEntries();
+                    this.calculateTotalTime();
+                }
+
+                prepareEditEntry(id) {
+                    const entry = this.entries.find(e => e.id === id);
+                    if (entry) {
+                        // Store the current editing entry ID
+                        currentEditingEntryId = id;
+
+                        // Populate modal with existing entry details
+                        document.getElementById('entryName').value = entry.name || '';
+                        document.getElementById('startTime').value = 
+                            new Date(entry.start).toISOString().slice(0, 16);
+                        document.getElementById('endTime').value = 
+                            new Date(entry.end).toISOString().slice(0, 16);
+                        
+                        // Open modal
+                        openModal();
+                    }
+                }
+            }
+
+            // Create global timeTracker instance after class definition
+            window.timeTracker = new TimeTracker();
+
+            // Event Listeners
+            function openModal() {
+                document.getElementById('entryModal').style.display = 'block';
+            }
+
+            function closeModal() {
+                // Reset the current editing entry ID
+                currentEditingEntryId = null;
+                
+                // Clear input fields
+                document.getElementById('entryName').value = '';
+                document.getElementById('startTime').value = '';
+                document.getElementById('endTime').value = '';
+                
+                document.getElementById('entryModal').style.display = 'none';
+            }
+
+            function saveEntry() {
+                const entryName = document.getElementById('entryName').value;
+                const startTime = document.getElementById('startTime').value;
+                const endTime = document.getElementById('endTime').value;
+
+                if (startTime && endTime) {
+                    // If we were editing an existing entry, first remove the old one
+                    if (currentEditingEntryId) {
+                        window.timeTracker.deleteEntry(currentEditingEntryId);
+                        currentEditingEntryId = null;
+                    }
+
+                    window.timeTracker.addEntry(entryName, startTime, endTime);
+                    closeModal();
+                } else {
+                    alert('Please enter both start and end times');
+                }
+            }
+
+            function clearAllEntries() {
+                if (confirm('Are you sure you want to clear all entries?')) {
+                    window.timeTracker.entries = [];
+                    window.timeTracker.saveEntries();
+                    window.timeTracker.renderEntries();
+                    window.timeTracker.calculateTotalTime();
+                }
+            }
+
+            // Attach event listeners
+            document.getElementById('addEntryBtn').addEventListener('click', openModal);
+            document.getElementById('cancelModalBtn').addEventListener('click', closeModal);
+            document.getElementById('saveEntryBtn').addEventListener('click', saveEntry);
+            document.getElementById('clearAllBtn').addEventListener('click', clearAllEntries);
+        })();
+    </script>
+</body>
